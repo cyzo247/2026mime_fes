@@ -1,0 +1,61 @@
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      font-family:
+        Pretendard,
+        "Apple SD Gothic Neo",
+        "Noto Sans KR",
+        system-ui,
+        sans-serif;
+      overflow-x: hidden;
+    }
+
+    ::selection {
+      background: #d8ff38;
+      color: #07182f;
+    }
+
+    .noise {
+      position: relative;
+    }
+
+    .noise::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      opacity: 0.08;
+      background-image:
+        radial-gradient(circle at 20% 20%, #ffffff 0 1px, transparent 1px),
+        radial-gradient(circle at 70% 60%, #ffffff 0 1px, transparent 1px);
+      background-size: 11px 11px, 17px 17px;
+      mix-blend-mode: overlay;
+    }
+
+    .hero-grid {
+      background-image:
+        linear-gradient(rgba(255,255,255,.06) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,.06) 1px, transparent 1px);
+      background-size: 48px 48px;
+    }
+
+    .map-grid {
+      background-color: #dfe8df;
+      background-image:
+        linear-gradient(28deg, transparent 46%, rgba(255,255,255,.92) 47%, rgba(255,255,255,.92) 52%, transparent 53%),
+        linear-gradient(-37deg, transparent 47%, rgba(255,255,255,.9) 48%, rgba(255,255,255,.9) 52%, transparent 53%),
+        linear-gradient(90deg, transparent 47%, rgba(255,255,255,.76) 48%, rgba(255,255,255,.76) 52%, transparent 53%),
+        linear-gradient(0deg, transparent 47%, rgba(255,255,255,.55) 48%, rgba(255,255,255,.55) 52%, transparent 53%);
+      background-size: 170px 170px, 220px 220px, 140px 140px, 110px 110px;
+    }
+
+    .hide-scrollbar::-webkit-scrollbar {
+      display: none;
+    }
+
+    .hide-scrollbar {
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+    }

@@ -18,6 +18,7 @@ import {
 	Home,
 	Image,
 	Link as LinkIcon,
+	LogOut,
 	Mail,
 	MapPin,
 	Menu,
@@ -38,6 +39,7 @@ import {
 	Zap,
 } from "lucide-react";
 import { FaFacebookF, FaInstagram, FaXTwitter, FaYoutube } from "react-icons/fa6";
+import { useAuth } from "../context/AuthContext.jsx";
 
 // ── 로컬 저장 헬퍼 ────────────────────────────────
 const readStore = (key, fallback) => {
@@ -297,6 +299,7 @@ const Logo = ({ compact = false }) => (
 );
 
 const HomePage = () => {
+	const { isLoggedIn, logout } = useAuth();
 	const [scrolled, setScrolled] = useState(false);
 	const [mobileMenu, setMobileMenu] = useState(false);
 	const [language, setLanguage] = useState("KO");
@@ -501,19 +504,31 @@ const HomePage = () => {
 							<ChevronDown className="h-3.5 w-3.5" />
 						</button>
 
-						<Link
-							to="/login"
-							className="hidden items-center rounded-full border border-white/15 px-4 py-2 text-xs font-bold text-slate-200 transition hover:border-mime-lime hover:text-mime-lime sm:flex"
-						>
-							로그인
-						</Link>
+						{isLoggedIn ? (
+							<button
+								onClick={logout}
+								className="hidden items-center gap-1.5 rounded-full border border-white/15 px-4 py-2 text-xs font-bold text-slate-200 transition hover:border-mime-lime hover:text-mime-lime sm:flex"
+							>
+								<LogOut className="h-3.5 w-3.5" />
+								로그아웃
+							</button>
+						) : (
+							<>
+								<Link
+									to="/login"
+									className="hidden items-center rounded-full border border-white/15 px-4 py-2 text-xs font-bold text-slate-200 transition hover:border-mime-lime hover:text-mime-lime sm:flex"
+								>
+									로그인
+								</Link>
 
-						<Link
-							to="/signup"
-							className="hidden items-center rounded-full bg-mime-lime px-4 py-2 text-xs font-black text-mime-navy transition hover:bg-white sm:flex"
-						>
-							회원가입
-						</Link>
+								<Link
+									to="/signup"
+									className="hidden items-center rounded-full bg-mime-lime px-4 py-2 text-xs font-black text-mime-navy transition hover:bg-white sm:flex"
+								>
+									회원가입
+								</Link>
+							</>
+						)}
 
 						<IconButton
 							label="북마크한 링크 보기"
@@ -570,20 +585,33 @@ const HomePage = () => {
 								Language ·{" "}
 								{language === "KO" ? "English" : "한국어"}
 							</button>
-							<div className="mt-2 grid grid-cols-2 gap-2">
-								<Link
-									to="/login"
-									className="flex items-center justify-center rounded-xl border border-white/15 px-4 py-3 text-sm font-bold text-white hover:border-mime-lime hover:text-mime-lime"
+							{isLoggedIn ? (
+								<button
+									onClick={() => {
+										logout();
+										setMobileMenu(false);
+									}}
+									className="mt-2 flex items-center justify-center gap-2 rounded-xl border border-white/15 px-4 py-3 text-sm font-bold text-white hover:border-mime-lime hover:text-mime-lime"
 								>
-									로그인
-								</Link>
-								<Link
-									to="/signup"
-									className="flex items-center justify-center rounded-xl bg-mime-lime px-4 py-3 text-sm font-black text-mime-navy hover:bg-white"
-								>
-									회원가입
-								</Link>
-							</div>
+									<LogOut className="h-4 w-4" />
+									로그아웃
+								</button>
+							) : (
+								<div className="mt-2 grid grid-cols-2 gap-2">
+									<Link
+										to="/login"
+										className="flex items-center justify-center rounded-xl border border-white/15 px-4 py-3 text-sm font-bold text-white hover:border-mime-lime hover:text-mime-lime"
+									>
+										로그인
+									</Link>
+									<Link
+										to="/signup"
+										className="flex items-center justify-center rounded-xl bg-mime-lime px-4 py-3 text-sm font-black text-mime-navy hover:bg-white"
+									>
+										회원가입
+									</Link>
+								</div>
+							)}
 						</div>
 					</div>
 				)}

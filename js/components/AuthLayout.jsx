@@ -41,9 +41,9 @@ const AuthLayout = ({ eyebrow, title, children, footer }) => (
 			</div>
 
 			{footer && (
-				<p className="mt-6 text-center text-sm text-slate-300">
+				<div className="mt-6 space-y-2 text-center text-sm text-slate-300">
 					{footer}
-				</p>
+				</div>
 			)}
 
 			<Link

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import AuthLayout, { AuthField } from "../components/AuthLayout.jsx";
+import { useAuth } from "../context/AuthContext.jsx";
 
 const DEMO_ACCOUNT = {
 	email: "test@example.com",
@@ -9,6 +10,7 @@ const DEMO_ACCOUNT = {
 
 const LoginPage = () => {
 	const navigate = useNavigate();
+	const { login } = useAuth();
 	const [email, setEmail] = useState("");
 	const [password, setPassword] = useState("");
 	const [error, setError] = useState("");
@@ -33,6 +35,7 @@ const LoginPage = () => {
 			return;
 		}
 
+		login(email.trim());
 		navigate("/");
 	};
 
@@ -43,13 +46,23 @@ const LoginPage = () => {
 				title="로그인"
 				footer={
 					<>
-						아직 계정이 없으신가요?{" "}
-						<Link
-							to="/signup"
-							className="font-bold text-mime-lime transition hover:opacity-80"
-						>
-							회원가입
-						</Link>
+						<p>
+							<Link
+								to="/forgot-password"
+								className="font-bold text-mime-lime transition hover:opacity-80"
+							>
+								비밀번호 찾기
+							</Link>
+						</p>
+						<p>
+							아직 계정이 없으신가요?{" "}
+							<Link
+								to="/signup"
+								className="font-bold text-mime-lime transition hover:opacity-80"
+							>
+								회원가입
+							</Link>
+						</p>
 					</>
 				}
 			>

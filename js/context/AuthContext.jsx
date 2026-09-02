@@ -1,38 +1,46 @@
 import { createContext, useContext, useEffect, useState } from "react";
+import { supabase } from "../lib/supabase.js";
 
 const AuthContext = createContext(null);
-const STORAGE_KEY = "mime.auth";
-
-const readAuth = () => {
-	try {
-		const raw = window.localStorage.getItem(STORAGE_KEY);
-		return raw ? JSON.parse(raw) : null;
-	} catch (error) {
-		return null;
-	}
-};
 
 export const AuthProvider = ({ children }) => {
-	const [user, setUser] = useState(() => readAuth());
+	const [session, setSession] = useState(null);
+	const [loading, setLoading] = useState(true);
 
 	useEffect(() => {
-		try {
-			if (user) {
-				window.localStorage.setItem(STORAGE_KEY, JSON.stringify(user));
-			} else {
-				window.localStorage.removeItem(STORAGE_KEY);
-			}
-		} catch (error) {
-			/* 저장 실패는 무시 (시크릿 모드 등) */
-		}
-	}, [user]);
+		supabase.auth.getSession().then(({ data }) => {
+			setSession(data.session);
+			setLoading(false);
+		});
 
-	const login = (email) => setUser({ email });
-	const logout = () => setUser(null);
+		const {
+			data: { subscription },
+		} = supabase.auth.onAuthStateChange((_event, newSession) => {
+			setSession(newSession);
+		});
+
+		return () => subscription.unsubscribe();
+	}, []);
+
+	const signup = (email, password) =>
+		supabase.auth.signUp({ email, password });
+
+	const login = (email, password) =>
+		supabase.auth.signInWithPassword({ email, password });
+
+	const logout = () => supabase.auth.signOut();
 
 	return (
 		<AuthContext.Provider
-			value={{ user, isLoggedIn: Boolean(user), login, logout }}
+			value={{
+				session,
+				user: session?.user ?? null,
+				isLoggedIn: Boolean(session),
+				loading,
+				signup,
+				login,
+				logout,
+			}}
 		>
 			{children}
 		</AuthContext.Provider>

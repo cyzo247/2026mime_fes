@@ -2,11 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import AuthLayout, { AuthField } from "../components/AuthLayout.jsx";
 import { useAuth } from "../context/AuthContext.jsx";
-
-const DEMO_ACCOUNT = {
-	email: "test@example.com",
-	password: "password123",
-};
+import { translateAuthError } from "../lib/authErrors.js";
 
 const LoginPage = () => {
 	const navigate = useNavigate();
@@ -14,8 +10,9 @@ const LoginPage = () => {
 	const [email, setEmail] = useState("");
 	const [password, setPassword] = useState("");
 	const [error, setError] = useState("");
+	const [submitting, setSubmitting] = useState(false);
 
-	const canSubmit = email.trim() && password;
+	const canSubmit = email.trim() && password && !submitting;
 
 	useEffect(() => {
 		if (!error) return;
@@ -23,19 +20,19 @@ const LoginPage = () => {
 		return () => clearTimeout(timeout);
 	}, [error]);
 
-	const handleSubmit = (event) => {
+	const handleSubmit = async (event) => {
 		event.preventDefault();
 		if (!canSubmit) return;
 
-		if (
-			email.trim() !== DEMO_ACCOUNT.email ||
-			password !== DEMO_ACCOUNT.password
-		) {
-			setError("이메일 또는 비밀번호가 올바르지 않습니다.");
+		setSubmitting(true);
+		const { error: signInError } = await login(email.trim(), password);
+		setSubmitting(false);
+
+		if (signInError) {
+			setError(translateAuthError(signInError));
 			return;
 		}
 
-		login(email.trim());
 		navigate("/");
 	};
 
@@ -91,13 +88,8 @@ const LoginPage = () => {
 						disabled={!canSubmit}
 						className="mt-2 w-full rounded-full bg-mime-lime px-6 py-4 text-sm font-black text-mime-navy transition hover:bg-white disabled:cursor-not-allowed disabled:bg-white/15 disabled:text-slate-400 disabled:hover:bg-white/15"
 					>
-						로그인
+						{submitting ? "로그인 중..." : "로그인"}
 					</button>
-
-					<p className="text-center text-xs text-slate-400">
-						데모 계정: {DEMO_ACCOUNT.email} /{" "}
-						{DEMO_ACCOUNT.password}
-					</p>
 				</form>
 			</AuthLayout>
 

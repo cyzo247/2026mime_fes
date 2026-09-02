@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import {
 	Activity,
+	AlertTriangle,
 	ArrowRight,
 	Bell,
 	Bookmark,
@@ -18,6 +19,7 @@ import {
 	Home,
 	Image,
 	Link as LinkIcon,
+	Loader2,
 	LogOut,
 	Mail,
 	MapPin,
@@ -26,6 +28,7 @@ import {
 	Newspaper,
 	Phone,
 	Play,
+	RefreshCw,
 	Search,
 	Send,
 	Share2,
@@ -40,6 +43,7 @@ import {
 } from "lucide-react";
 import { FaFacebookF, FaInstagram, FaXTwitter, FaYoutube } from "react-icons/fa6";
 import { useAuth } from "../context/AuthContext.jsx";
+import { supabase } from "../lib/supabase.js";
 
 // ── 로컬 저장 헬퍼 ────────────────────────────────
 const readStore = (key, fallback) => {
@@ -70,85 +74,10 @@ const getHost = (url) => {
 };
 
 const STORAGE_KEYS = {
-	links: "mime.linkBookmarks",
 	schedule: "mime.scheduleBookmarks",
 };
 
-// ── 외부 홍보 링크 데이터 (샘플) ──────────────────
-// 실제 운영 시 url 값을 공식 주소로 교체하세요.
-const linkData = [
-	{
-		id: "official",
-		category: "공식",
-		title: "춘천마임축제 공식 홈페이지",
-		description:
-			"전체 프로그램, 공지사항, 참여 안내를 한곳에서 확인하세요.",
-		url: "https://www.mimefestival.com",
-	},
-	{
-		id: "ticket",
-		category: "예매",
-		title: "온라인 티켓 예매 (인터파크)",
-		description: "유료 공연 좌석 선택과 예매 내역 확인.",
-		url: "https://tickets.interpark.com",
-	},
-	{
-		id: "instagram",
-		category: "SNS",
-		title: "공식 인스타그램 @chuncheonmime",
-		description: "현장 스케치와 실시간 소식, 이벤트 참여 안내.",
-		url: "https://www.instagram.com/chuncheonmime",
-	},
-	{
-		id: "youtube",
-		category: "SNS",
-		title: "공식 유튜브 채널",
-		description: "지난 공연 다시보기와 아티스트 인터뷰 영상.",
-		url: "https://www.youtube.com/@chuncheonmimefestival",
-	},
-	{
-		id: "facebook",
-		category: "SNS",
-		title: "공식 페이스북 페이지",
-		description: "축제 뉴스와 커뮤니티 소통 공간.",
-		url: "https://www.facebook.com/mimefestival",
-	},
-	{
-		id: "tour",
-		category: "여행",
-		title: "춘천시 문화관광 안내",
-		description: "숙박, 맛집, 주변 명소 등 춘천 여행 정보.",
-		url: "https://www.chuncheon.go.kr/tour",
-	},
-	{
-		id: "train",
-		category: "교통",
-		title: "ITX-청춘 열차 예매 (레츠코레일)",
-		description: "용산~춘천 열차 시간표 확인과 승차권 예매.",
-		url: "https://www.letskorail.com",
-	},
-	{
-		id: "map",
-		category: "교통",
-		title: "축제장 오시는 길 (지도)",
-		description: "공지천 야외무대 위치와 대중교통·주차 안내.",
-		url: "https://map.naver.com",
-	},
-	{
-		id: "press",
-		category: "미디어",
-		title: "보도자료 · 언론보도 모음",
-		description: "최신 뉴스와 공식 보도자료 아카이브.",
-		url: "https://www.mimefestival.com/news",
-	},
-	{
-		id: "volunteer",
-		category: "참여",
-		title: "자원활동가 · 서포터즈 모집",
-		description: "축제를 함께 만드는 자원활동 신청 페이지.",
-		url: "https://www.mimefestival.com/volunteer",
-	},
-];
+// ── 외부 홍보 링크 데이터: Supabase의 bookmark_items 테이블에서 조회 ──
 
 const linkCategories = [
 	"전체",
@@ -299,7 +228,8 @@ const Logo = ({ compact = false }) => (
 );
 
 const HomePage = () => {
-	const { isLoggedIn, logout } = useAuth();
+	const { isLoggedIn, user, logout } = useAuth();
+	const navigate = useNavigate();
 	const [scrolled, setScrolled] = useState(false);
 	const [mobileMenu, setMobileMenu] = useState(false);
 	const [language, setLanguage] = useState("KO");
@@ -309,10 +239,8 @@ const HomePage = () => {
 	const [dateFilter, setDateFilter] = useState("전체");
 	const [linkCategory, setLinkCategory] = useState("전체");
 
-	// 외부 홈페이지 링크 북마크 / 행사 일정 북마크는 서로 분리해서 관리
-	const [linkBookmarks, setLinkBookmarks] = useState(() =>
-		readStore(STORAGE_KEYS.links, ["official", "instagram"]),
-	);
+	// 외부 홈페이지 링크 북마크(Supabase user_bookmarks) / 행사 일정 북마크(로컬)는 서로 분리해서 관리
+	const [linkBookmarks, setLinkBookmarks] = useState([]);
 	const [scheduleBookmarks, setScheduleBookmarks] = useState(() =>
 		readStore(STORAGE_KEYS.schedule, [2, 4]),
 	);
@@ -322,6 +250,55 @@ const HomePage = () => {
 	const [copied, setCopied] = useState(false);
 	const [selectedDay, setSelectedDay] = useState("25");
 	const [toast, setToast] = useState("");
+
+	// bookmark_items(서비스 제공 링크 카탈로그)는 Supabase에서 조회
+	const [bookmarkItems, setBookmarkItems] = useState([]);
+	const [linksLoading, setLinksLoading] = useState(true);
+	const [linksError, setLinksError] = useState(false);
+
+	const fetchBookmarkItems = () => {
+		setLinksLoading(true);
+		setLinksError(false);
+		supabase
+			.from("bookmark_items")
+			.select("id, url, title, description, thumbnail_url, category, created_at")
+			.order("created_at", { ascending: true })
+			.then(({ data, error }) => {
+				if (error) {
+					setLinksError(true);
+					setLinksLoading(false);
+					return;
+				}
+				setBookmarkItems(data ?? []);
+				setLinksLoading(false);
+			});
+	};
+
+	useEffect(() => {
+		fetchBookmarkItems();
+	}, []);
+
+	// 로그인한 사용자의 user_bookmarks를 조회해 현재 북마크한 item_id 목록을 구성.
+	// 로그아웃 상태이거나 로그아웃하면 즉시 비움.
+	useEffect(() => {
+		if (!isLoggedIn || !user) {
+			setLinkBookmarks([]);
+			return;
+		}
+
+		let active = true;
+		supabase
+			.from("user_bookmarks")
+			.select("item_id")
+			.then(({ data, error }) => {
+				if (!active || error) return;
+				setLinkBookmarks((data ?? []).map((row) => row.item_id));
+			});
+
+		return () => {
+			active = false;
+		};
+	}, [isLoggedIn, user?.id]);
 
 	useEffect(() => {
 		const handleScroll = () => setScrolled(window.scrollY > 50);
@@ -334,10 +311,6 @@ const HomePage = () => {
 		const timeout = setTimeout(() => setToast(""), 2600);
 		return () => clearTimeout(timeout);
 	}, [toast]);
-
-	useEffect(() => {
-		writeStore(STORAGE_KEYS.links, linkBookmarks);
-	}, [linkBookmarks]);
 
 	useEffect(() => {
 		writeStore(STORAGE_KEYS.schedule, scheduleBookmarks);
@@ -370,13 +343,13 @@ const HomePage = () => {
 
 	const filteredLinks = useMemo(() => {
 		return linkCategory === "전체"
-			? linkData
-			: linkData.filter((link) => link.category === linkCategory);
-	}, [linkCategory]);
+			? bookmarkItems
+			: bookmarkItems.filter((link) => link.category === linkCategory);
+	}, [bookmarkItems, linkCategory]);
 
 	const bookmarkedLinks = useMemo(() => {
-		return linkData.filter((link) => linkBookmarks.includes(link.id));
-	}, [linkBookmarks]);
+		return bookmarkItems.filter((link) => linkBookmarks.includes(link.id));
+	}, [bookmarkItems, linkBookmarks]);
 
 	const scheduledPrograms = useMemo(() => {
 		return programData
@@ -387,15 +360,43 @@ const HomePage = () => {
 			);
 	}, [scheduleBookmarks]);
 
-	const toggleLinkBookmark = (id) => {
-		setLinkBookmarks((current) => {
-			if (current.includes(id)) {
-				setToast("링크 북마크를 해제했습니다.");
-				return current.filter((linkId) => linkId !== id);
+	const toggleLinkBookmark = async (itemId) => {
+		if (!isLoggedIn || !user) {
+			navigate("/login");
+			return;
+		}
+
+		const alreadyBookmarked = linkBookmarks.includes(itemId);
+
+		if (alreadyBookmarked) {
+			setLinkBookmarks((current) => current.filter((id) => id !== itemId));
+			const { error } = await supabase
+				.from("user_bookmarks")
+				.delete()
+				.eq("user_id", user.id)
+				.eq("item_id", itemId);
+
+			if (error) {
+				setLinkBookmarks((current) => [...current, itemId]);
+				setToast("북마크 삭제에 실패했습니다.");
+				return;
+			}
+			setToast("링크 북마크를 해제했습니다.");
+		} else {
+			setLinkBookmarks((current) => [...current, itemId]);
+			const { error } = await supabase.from("user_bookmarks").insert({
+				user_id: user.id,
+				item_id: itemId,
+				folder_id: null,
+			});
+
+			if (error) {
+				setLinkBookmarks((current) => current.filter((id) => id !== itemId));
+				setToast("북마크 저장에 실패했습니다.");
+				return;
 			}
 			setToast("링크를 북마크에 저장했습니다!");
-			return [...current, id];
-		});
+		}
 	};
 
 	const toggleSchedule = (id) => {
@@ -830,24 +831,50 @@ const HomePage = () => {
 							))}
 						</div>
 
-						<div className="mt-8 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-							{filteredLinks.map((link) => (
-								<LinkCard
-									key={link.id}
-									link={link}
-									bookmarked={linkBookmarks.includes(link.id)}
-									onBookmark={() =>
-										toggleLinkBookmark(link.id)
-									}
-									onCopy={() =>
-										copyText(
-											link.url,
-											"링크 주소를 복사했습니다.",
-										)
-									}
-								/>
-							))}
-						</div>
+						{linksLoading ? (
+							<div className="mt-8 rounded-3xl border border-dashed border-slate-300 bg-white py-16 text-center">
+								<Loader2 className="mx-auto h-8 w-8 animate-spin text-slate-300" />
+								<p className="mt-3 font-bold text-slate-500">
+									링크를 불러오는 중입니다...
+								</p>
+							</div>
+						) : linksError ? (
+							<div className="mt-8 rounded-3xl border border-dashed border-rose-300 bg-rose-50 py-16 text-center">
+								<AlertTriangle className="mx-auto h-8 w-8 text-rose-400" />
+								<p className="mt-3 font-bold text-rose-500">
+									링크를 불러오지 못했습니다. 잠시 후 다시
+									시도해주세요.
+								</p>
+								<button
+									onClick={fetchBookmarkItems}
+									className="mt-4 inline-flex items-center gap-1.5 text-sm font-black text-mime-blue"
+								>
+									<RefreshCw className="h-4 w-4" />
+									다시 시도
+								</button>
+							</div>
+						) : (
+							<div className="mt-8 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+								{filteredLinks.map((link) => (
+									<LinkCard
+										key={link.id}
+										link={link}
+										bookmarked={linkBookmarks.includes(
+											link.id,
+										)}
+										onBookmark={() =>
+											toggleLinkBookmark(link.id)
+										}
+										onCopy={() =>
+											copyText(
+												link.url,
+												"링크 주소를 복사했습니다.",
+											)
+										}
+									/>
+								))}
+							</div>
+						)}
 					</div>
 				</section>
 
@@ -1275,7 +1302,7 @@ const HomePage = () => {
 								<span className="text-lg font-black text-mime-blue">
 									{linkBookmarks.length}
 								</span>
-								개 · 이 기기에 저장됨
+								개 · 내 계정에 저장됨
 							</div>
 						</div>
 

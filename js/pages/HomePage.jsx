@@ -26,6 +26,7 @@ import {
 	Menu,
 	MessageSquare,
 	Newspaper,
+	Pencil,
 	Phone,
 	Play,
 	RefreshCw,
@@ -240,10 +241,18 @@ const HomePage = () => {
 	const [linkCategory, setLinkCategory] = useState("전체");
 
 	// 외부 홈페이지 링크 북마크(Supabase user_bookmarks) / 행사 일정 북마크(로컬)는 서로 분리해서 관리
+	// linkBookmarks: [{ item_id, folder_id }]
 	const [linkBookmarks, setLinkBookmarks] = useState([]);
 	const [scheduleBookmarks, setScheduleBookmarks] = useState(() =>
 		readStore(STORAGE_KEYS.schedule, [2, 4]),
 	);
+
+	// 사용자 북마크 폴더(Supabase folders)
+	const [folders, setFolders] = useState([]);
+	const [foldersLoading, setFoldersLoading] = useState(false);
+	const [foldersError, setFoldersError] = useState(false);
+	const [activeFolderFilter, setActiveFolderFilter] = useState("all");
+	const [folderModal, setFolderModal] = useState(null);
 
 	const [selectedProgram, setSelectedProgram] = useState(null);
 	const [shareProgram, setShareProgram] = useState(null);
@@ -278,8 +287,8 @@ const HomePage = () => {
 		fetchBookmarkItems();
 	}, []);
 
-	// 로그인한 사용자의 user_bookmarks를 조회해 현재 북마크한 item_id 목록을 구성.
-	// 로그아웃 상태이거나 로그아웃하면 즉시 비움.
+	// 로그인한 사용자의 user_bookmarks를 조회해 현재 북마크한 item_id/folder_id 목록을 구성.
+	// 로그아웃 상태이거나 로그아웃하면 즉시 비움 (이전 사용자 데이터가 화면에 남지 않도록).
 	useEffect(() => {
 		if (!isLoggedIn || !user) {
 			setLinkBookmarks([]);
@@ -289,15 +298,43 @@ const HomePage = () => {
 		let active = true;
 		supabase
 			.from("user_bookmarks")
-			.select("item_id")
+			.select("item_id, folder_id")
 			.then(({ data, error }) => {
 				if (!active || error) return;
-				setLinkBookmarks((data ?? []).map((row) => row.item_id));
+				setLinkBookmarks(data ?? []);
 			});
 
 		return () => {
 			active = false;
 		};
+	}, [isLoggedIn, user?.id]);
+
+	const fetchFolders = () => {
+		setFoldersLoading(true);
+		setFoldersError(false);
+		supabase
+			.from("folders")
+			.select("id, name, created_at")
+			.order("created_at", { ascending: true })
+			.then(({ data, error }) => {
+				if (error) {
+					setFoldersError(true);
+					setFoldersLoading(false);
+					return;
+				}
+				setFolders(data ?? []);
+				setFoldersLoading(false);
+			});
+	};
+
+	// 로그인한 사용자의 폴더 목록 조회. 로그아웃하면 즉시 비우고 필터도 초기화.
+	useEffect(() => {
+		if (!isLoggedIn || !user) {
+			setFolders([]);
+			setActiveFolderFilter("all");
+			return;
+		}
+		fetchFolders();
 	}, [isLoggedIn, user?.id]);
 
 	useEffect(() => {
@@ -348,8 +385,34 @@ const HomePage = () => {
 	}, [bookmarkItems, linkCategory]);
 
 	const bookmarkedLinks = useMemo(() => {
-		return bookmarkItems.filter((link) => linkBookmarks.includes(link.id));
+		return linkBookmarks
+			.map((bookmark) => {
+				const item = bookmarkItems.find(
+					(link) => link.id === bookmark.item_id,
+				);
+				return item ? { ...item, folder_id: bookmark.folder_id } : null;
+			})
+			.filter(Boolean);
 	}, [bookmarkItems, linkBookmarks]);
+
+	const selectedFolder = useMemo(() => {
+		if (activeFolderFilter === "all" || activeFolderFilter === "none") {
+			return null;
+		}
+		return (
+			folders.find((folder) => folder.id === activeFolderFilter) ?? null
+		);
+	}, [folders, activeFolderFilter]);
+
+	const visibleBookmarkedLinks = useMemo(() => {
+		if (activeFolderFilter === "all") return bookmarkedLinks;
+		if (activeFolderFilter === "none") {
+			return bookmarkedLinks.filter((link) => link.folder_id === null);
+		}
+		return bookmarkedLinks.filter(
+			(link) => link.folder_id === activeFolderFilter,
+		);
+	}, [bookmarkedLinks, activeFolderFilter]);
 
 	const scheduledPrograms = useMemo(() => {
 		return programData
@@ -366,10 +429,14 @@ const HomePage = () => {
 			return;
 		}
 
-		const alreadyBookmarked = linkBookmarks.includes(itemId);
+		const alreadyBookmarked = linkBookmarks.some(
+			(bookmark) => bookmark.item_id === itemId,
+		);
 
 		if (alreadyBookmarked) {
-			setLinkBookmarks((current) => current.filter((id) => id !== itemId));
+			setLinkBookmarks((current) =>
+				current.filter((bookmark) => bookmark.item_id !== itemId),
+			);
 			const { error } = await supabase
 				.from("user_bookmarks")
 				.delete()
@@ -377,13 +444,19 @@ const HomePage = () => {
 				.eq("item_id", itemId);
 
 			if (error) {
-				setLinkBookmarks((current) => [...current, itemId]);
+				setLinkBookmarks((current) => [
+					...current,
+					{ item_id: itemId, folder_id: null },
+				]);
 				setToast("북마크 삭제에 실패했습니다.");
 				return;
 			}
 			setToast("링크 북마크를 해제했습니다.");
 		} else {
-			setLinkBookmarks((current) => [...current, itemId]);
+			setLinkBookmarks((current) => [
+				...current,
+				{ item_id: itemId, folder_id: null },
+			]);
 			const { error } = await supabase.from("user_bookmarks").insert({
 				user_id: user.id,
 				item_id: itemId,
@@ -391,12 +464,134 @@ const HomePage = () => {
 			});
 
 			if (error) {
-				setLinkBookmarks((current) => current.filter((id) => id !== itemId));
+				setLinkBookmarks((current) =>
+					current.filter((bookmark) => bookmark.item_id !== itemId),
+				);
 				setToast("북마크 저장에 실패했습니다.");
 				return;
 			}
 			setToast("링크를 북마크에 저장했습니다!");
 		}
+	};
+
+	const createFolder = async (name) => {
+		const trimmed = name.trim();
+		if (!trimmed) {
+			setToast("폴더 이름을 입력해주세요.");
+			return false;
+		}
+		if (trimmed.length > 30) {
+			setToast("폴더 이름은 30자 이내로 입력해주세요.");
+			return false;
+		}
+
+		const { data, error } = await supabase
+			.from("folders")
+			.insert({ user_id: user.id, name: trimmed })
+			.select("id, name, created_at")
+			.single();
+
+		if (error || !data) {
+			setToast("폴더 생성에 실패했습니다.");
+			return false;
+		}
+
+		setFolders((current) => [...current, data]);
+		setToast("폴더를 만들었습니다.");
+		return true;
+	};
+
+	const renameFolder = async (folderId, name) => {
+		const trimmed = name.trim();
+		if (!trimmed) {
+			setToast("폴더 이름을 입력해주세요.");
+			return false;
+		}
+		if (trimmed.length > 30) {
+			setToast("폴더 이름은 30자 이내로 입력해주세요.");
+			return false;
+		}
+
+		const { error } = await supabase
+			.from("folders")
+			.update({ name: trimmed })
+			.eq("id", folderId)
+			.eq("user_id", user.id);
+
+		if (error) {
+			setToast("폴더 이름 변경에 실패했습니다.");
+			return false;
+		}
+
+		setFolders((current) =>
+			current.map((folder) =>
+				folder.id === folderId ? { ...folder, name: trimmed } : folder,
+			),
+		);
+		setToast("폴더 이름을 변경했습니다.");
+		return true;
+	};
+
+	const deleteFolder = async (folderId) => {
+		// 1) 이 폴더를 가진 user_bookmarks의 folder_id를 먼저 null로 변경
+		const { error: clearError } = await supabase
+			.from("user_bookmarks")
+			.update({ folder_id: null })
+			.eq("user_id", user.id)
+			.eq("folder_id", folderId);
+
+		if (clearError) {
+			setToast("폴더 삭제에 실패했습니다.");
+			return false;
+		}
+
+		// 2) 그 다음 folders 행 삭제
+		const { error: deleteError } = await supabase
+			.from("folders")
+			.delete()
+			.eq("id", folderId)
+			.eq("user_id", user.id);
+
+		if (deleteError) {
+			setToast("폴더 삭제에 실패했습니다.");
+			return false;
+		}
+
+		setFolders((current) => current.filter((folder) => folder.id !== folderId));
+		setLinkBookmarks((current) =>
+			current.map((bookmark) =>
+				bookmark.folder_id === folderId
+					? { ...bookmark, folder_id: null }
+					: bookmark,
+			),
+		);
+		setActiveFolderFilter("all");
+		setToast("폴더를 삭제했습니다.");
+		return true;
+	};
+
+	const updateBookmarkFolder = async (itemId, folderId) => {
+		const previous = linkBookmarks;
+		setLinkBookmarks((current) =>
+			current.map((bookmark) =>
+				bookmark.item_id === itemId
+					? { ...bookmark, folder_id: folderId }
+					: bookmark,
+			),
+		);
+
+		const { error } = await supabase
+			.from("user_bookmarks")
+			.update({ folder_id: folderId })
+			.eq("user_id", user.id)
+			.eq("item_id", itemId);
+
+		if (error) {
+			setLinkBookmarks(previous);
+			setToast("폴더 변경에 실패했습니다.");
+			return;
+		}
+		setToast("북마크 폴더를 변경했습니다.");
 	};
 
 	const toggleSchedule = (id) => {
@@ -859,8 +1054,9 @@ const HomePage = () => {
 									<LinkCard
 										key={link.id}
 										link={link}
-										bookmarked={linkBookmarks.includes(
-											link.id,
+										bookmarked={linkBookmarks.some(
+											(bookmark) =>
+												bookmark.item_id === link.id,
 										)}
 										onBookmark={() =>
 											toggleLinkBookmark(link.id)
@@ -1297,49 +1493,168 @@ const HomePage = () => {
 								</h2>
 							</div>
 
-							<div className="rounded-2xl border border-slate-200 bg-white px-5 py-4 text-sm font-bold text-slate-600 shadow-sm">
-								북마크{" "}
-								<span className="text-lg font-black text-mime-blue">
-									{linkBookmarks.length}
-								</span>
-								개 · 내 계정에 저장됨
-							</div>
+							{isLoggedIn &&
+								(selectedFolder ? (
+									<div className="flex items-center gap-1 rounded-2xl border border-slate-200 bg-white px-5 py-4 text-sm font-bold text-slate-600 shadow-sm">
+										<span className="truncate">
+											이 폴더:{" "}
+											<span className="text-mime-blue">
+												{selectedFolder.name}
+											</span>
+										</span>
+										<button
+											onClick={() =>
+												setFolderModal({
+													mode: "rename",
+													target: selectedFolder,
+												})
+											}
+											aria-label="폴더 이름 변경"
+											className="ml-1 rounded-full p-1.5 text-slate-400 transition hover:bg-blue-50 hover:text-mime-blue"
+										>
+											<Pencil className="h-4 w-4" />
+										</button>
+										<button
+											onClick={() =>
+												setFolderModal({
+													mode: "delete",
+													target: selectedFolder,
+												})
+											}
+											aria-label="폴더 삭제"
+											className="rounded-full p-1.5 text-slate-400 transition hover:bg-rose-50 hover:text-rose-500"
+										>
+											<Trash2 className="h-4 w-4" />
+										</button>
+									</div>
+								) : (
+									<div className="rounded-2xl border border-slate-200 bg-white px-5 py-4 text-sm font-bold text-slate-600 shadow-sm">
+										북마크{" "}
+										<span className="text-lg font-black text-mime-blue">
+											{linkBookmarks.length}
+										</span>
+										개 · 내 계정에 저장됨
+									</div>
+								))}
 						</div>
 
-						<div className="mt-10 space-y-3">
-							{bookmarkedLinks.length > 0 ? (
-								bookmarkedLinks.map((link) => (
-									<BookmarkedLinkRow
-										key={link.id}
-										link={link}
-										onCopy={() =>
-											copyText(
-												link.url,
-												"링크 주소를 복사했습니다.",
-											)
-										}
-										onRemove={() =>
-											toggleLinkBookmark(link.id)
-										}
-									/>
-								))
-							) : (
-								<div className="rounded-[2rem] border border-dashed border-slate-300 bg-white py-16 text-center">
-									<Star className="mx-auto h-9 w-9 text-slate-300" />
-									<p className="mt-3 font-bold text-slate-500">
-										아직 북마크한 링크가 없습니다.
-									</p>
+						{!isLoggedIn ? (
+							<div className="mt-10 rounded-[2rem] border border-dashed border-slate-300 bg-white py-16 text-center">
+								<Star className="mx-auto h-9 w-9 text-slate-300" />
+								<p className="mt-3 font-bold text-slate-500">
+									로그인하면 나만의 폴더를 만들 수 있어요.
+								</p>
+								<Link
+									to="/login"
+									className="mt-4 inline-block text-sm font-black text-mime-blue"
+								>
+									로그인하기
+								</Link>
+							</div>
+						) : (
+							<>
+								<div className="hide-scrollbar mt-8 flex gap-2 overflow-x-auto pb-1">
 									<button
 										onClick={() =>
-											scrollTo("links", "바로가기")
+											setActiveFolderFilter("all")
 										}
-										className="mt-4 text-sm font-black text-mime-blue"
+										className={`shrink-0 rounded-full px-4 py-2 text-sm font-bold transition ${
+											activeFolderFilter === "all"
+												? "bg-mime-navy text-white"
+												: "bg-slate-100 text-slate-500 hover:bg-slate-200"
+										}`}
 									>
-										바로가기 링크 둘러보기
+										전체
+									</button>
+									<button
+										onClick={() =>
+											setActiveFolderFilter("none")
+										}
+										className={`shrink-0 rounded-full px-4 py-2 text-sm font-bold transition ${
+											activeFolderFilter === "none"
+												? "bg-mime-navy text-white"
+												: "bg-slate-100 text-slate-500 hover:bg-slate-200"
+										}`}
+									>
+										폴더 없음
+									</button>
+									{folders.map((folder) => (
+										<button
+											key={folder.id}
+											onClick={() =>
+												setActiveFolderFilter(
+													folder.id,
+												)
+											}
+											className={`shrink-0 rounded-full px-4 py-2 text-sm font-bold transition ${
+												activeFolderFilter ===
+												folder.id
+													? "bg-mime-navy text-white"
+													: "bg-slate-100 text-slate-500 hover:bg-slate-200"
+											}`}
+										>
+											{folder.name}
+										</button>
+									))}
+									<button
+										onClick={() =>
+											setFolderModal({
+												mode: "create",
+												target: null,
+											})
+										}
+										className="shrink-0 rounded-full border border-dashed border-slate-300 px-4 py-2 text-sm font-bold text-slate-500 transition hover:border-mime-blue hover:text-mime-blue"
+									>
+										+ 새 폴더
 									</button>
 								</div>
-							)}
-						</div>
+
+								<div className="mt-6 space-y-3">
+									{visibleBookmarkedLinks.length > 0 ? (
+										visibleBookmarkedLinks.map((link) => (
+											<BookmarkedLinkRow
+												key={link.id}
+												link={link}
+												folders={folders}
+												onCopy={() =>
+													copyText(
+														link.url,
+														"링크 주소를 복사했습니다.",
+													)
+												}
+												onRemove={() =>
+													toggleLinkBookmark(link.id)
+												}
+												onChangeFolder={(folderId) =>
+													updateBookmarkFolder(
+														link.id,
+														folderId,
+													)
+												}
+											/>
+										))
+									) : (
+										<div className="rounded-[2rem] border border-dashed border-slate-300 bg-white py-16 text-center">
+											<Star className="mx-auto h-9 w-9 text-slate-300" />
+											<p className="mt-3 font-bold text-slate-500">
+												아직 북마크한 링크가 없습니다.
+											</p>
+											<button
+												onClick={() =>
+													scrollTo(
+														"links",
+														"바로가기",
+													)
+												}
+												className="mt-4 text-sm font-black text-mime-blue"
+											>
+												바로가기 링크 둘러보기
+											</button>
+										</div>
+									)}
+								</div>
+							</>
+						)}
 					</div>
 				</section>
 
@@ -1573,6 +1888,17 @@ const HomePage = () => {
 				/>
 			)}
 
+			{folderModal && (
+				<FolderModal
+					mode={folderModal.mode}
+					target={folderModal.target}
+					onClose={() => setFolderModal(null)}
+					onCreate={createFolder}
+					onRename={renameFolder}
+					onDelete={deleteFolder}
+				/>
+			)}
+
 			{toast && (
 				<div className="fixed bottom-24 left-1/2 z-[70] flex -translate-x-1/2 items-center gap-2 rounded-full bg-mime-lime px-5 py-3 text-sm font-black text-mime-navy shadow-2xl lg:bottom-8">
 					<CheckCircle className="h-4 w-4" />
@@ -1673,11 +1999,11 @@ const LinkCard = ({ link, bookmarked, onBookmark, onCopy }) => {
 	);
 };
 
-const BookmarkedLinkRow = ({ link, onCopy, onRemove }) => {
+const BookmarkedLinkRow = ({ link, folders, onCopy, onRemove, onChangeFolder }) => {
 	const Icon = categoryIcon[link.category] || LinkIcon;
 
 	return (
-		<div className="flex items-center gap-3 rounded-2xl bg-white p-4 shadow-sm sm:gap-4">
+		<div className="flex flex-col gap-3 rounded-2xl bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:gap-4">
 			<div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-mime-navy text-mime-lime">
 				<Icon className="h-5 w-5" />
 			</div>
@@ -1689,31 +2015,153 @@ const BookmarkedLinkRow = ({ link, onCopy, onRemove }) => {
 				</p>
 			</div>
 
-			<a
-				href={link.url}
-				target="_blank"
-				rel="noopener noreferrer"
-				className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-mime-navy px-4 py-2 text-xs font-black text-white transition hover:bg-mime-blue"
-			>
-				방문
-				<ExternalLink className="h-3.5 w-3.5" />
-			</a>
+			<label className="shrink-0">
+				<span className="sr-only">폴더 선택</span>
+				<select
+					value={link.folder_id ?? ""}
+					onChange={(event) =>
+						onChangeFolder(
+							event.target.value
+								? Number(event.target.value)
+								: null,
+						)
+					}
+					className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold outline-none transition focus:border-mime-blue sm:w-36"
+				>
+					<option value="">폴더 없음</option>
+					{folders.map((folder) => (
+						<option key={folder.id} value={folder.id}>
+							{folder.name}
+						</option>
+					))}
+				</select>
+			</label>
 
-			<button
-				onClick={onCopy}
-				aria-label="링크 주소 복사"
-				className="hidden shrink-0 rounded-full p-2 text-slate-400 transition hover:bg-blue-50 hover:text-mime-blue sm:block"
-			>
-				<Copy className="h-4 w-4" />
-			</button>
+			<div className="flex shrink-0 items-center gap-1 self-end sm:self-auto">
+				<a
+					href={link.url}
+					target="_blank"
+					rel="noopener noreferrer"
+					className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-mime-navy px-4 py-2 text-xs font-black text-white transition hover:bg-mime-blue"
+				>
+					방문
+					<ExternalLink className="h-3.5 w-3.5" />
+				</a>
 
-			<button
-				onClick={onRemove}
-				aria-label={`${link.title} 북마크 삭제`}
-				className="shrink-0 rounded-full p-2 text-slate-400 transition hover:bg-rose-50 hover:text-rose-500"
+				<button
+					onClick={onCopy}
+					aria-label="링크 주소 복사"
+					className="hidden shrink-0 rounded-full p-2 text-slate-400 transition hover:bg-blue-50 hover:text-mime-blue sm:block"
+				>
+					<Copy className="h-4 w-4" />
+				</button>
+
+				<button
+					onClick={onRemove}
+					aria-label={`${link.title} 북마크 삭제`}
+					className="shrink-0 rounded-full p-2 text-slate-400 transition hover:bg-rose-50 hover:text-rose-500"
+				>
+					<Trash2 className="h-4 w-4" />
+				</button>
+			</div>
+		</div>
+	);
+};
+
+const FolderModal = ({ mode, target, onClose, onCreate, onRename, onDelete }) => {
+	const [name, setName] = useState(mode === "rename" ? (target?.name ?? "") : "");
+	const [submitting, setSubmitting] = useState(false);
+	const isDelete = mode === "delete";
+
+	const handleConfirm = async () => {
+		setSubmitting(true);
+		let ok = false;
+		if (mode === "create") ok = await onCreate(name);
+		else if (mode === "rename") ok = await onRename(target.id, name);
+		else if (mode === "delete") ok = await onDelete(target.id);
+		setSubmitting(false);
+		if (ok) onClose();
+	};
+
+	return (
+		<div
+			className="fixed inset-0 z-[65] flex items-end bg-slate-950/70 p-0 backdrop-blur-sm sm:items-center sm:justify-center sm:p-6"
+			onClick={onClose}
+		>
+			<div
+				className="w-full max-w-lg rounded-t-[2rem] bg-white p-6 text-mime-navy shadow-2xl sm:rounded-[2rem] sm:p-8"
+				onClick={(event) => event.stopPropagation()}
 			>
-				<Trash2 className="h-4 w-4" />
-			</button>
+				<div className="flex items-center justify-between">
+					<div>
+						<p className="text-xs font-black tracking-[0.16em] text-mime-blue">
+							{isDelete
+								? "DELETE FOLDER"
+								: mode === "rename"
+									? "RENAME FOLDER"
+									: "NEW FOLDER"}
+						</p>
+						<h2 className="mt-2 text-2xl font-black">
+							{isDelete
+								? "폴더 삭제"
+								: mode === "rename"
+									? "폴더 이름 변경"
+									: "새 폴더 만들기"}
+						</h2>
+					</div>
+					<button
+						onClick={onClose}
+						className="rounded-full bg-slate-100 p-2 transition hover:bg-slate-200"
+						aria-label="닫기"
+					>
+						<X className="h-5 w-5" />
+					</button>
+				</div>
+
+				{isDelete ? (
+					<p className="mt-6 text-sm leading-6 text-slate-600">
+						<span className="font-bold text-mime-navy">
+							"{target?.name}"
+						</span>{" "}
+						폴더를 삭제하면 안의 링크는 '폴더 없음'으로
+						이동합니다.
+					</p>
+				) : (
+					<label className="mt-6 block">
+						<span className="mb-2 block text-xs font-bold text-slate-500">
+							폴더 이름
+						</span>
+						<input
+							value={name}
+							onChange={(event) => setName(event.target.value)}
+							maxLength={30}
+							autoFocus
+							className="w-full rounded-2xl border border-slate-200 px-4 py-3.5 text-sm font-medium outline-none transition focus:border-mime-blue focus:ring-4 focus:ring-blue-100"
+							placeholder="예: 여행 링크 모음"
+						/>
+					</label>
+				)}
+
+				<div className="mt-6 grid grid-cols-2 gap-3">
+					<button
+						onClick={onClose}
+						className="rounded-xl bg-slate-100 px-4 py-3.5 text-sm font-black text-slate-600 transition hover:bg-slate-200"
+					>
+						취소
+					</button>
+					<button
+						onClick={handleConfirm}
+						disabled={submitting || (!isDelete && !name.trim())}
+						className={`rounded-xl px-4 py-3.5 text-sm font-black text-white transition disabled:cursor-not-allowed disabled:opacity-50 ${
+							isDelete
+								? "bg-rose-500 hover:bg-rose-600"
+								: "bg-mime-navy hover:bg-mime-blue"
+						}`}
+					>
+						{isDelete ? "삭제" : mode === "rename" ? "저장" : "만들기"}
+					</button>
+				</div>
+			</div>
 		</div>
 	);
 };

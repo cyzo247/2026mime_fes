@@ -58,14 +58,6 @@ const readStore = (key, fallback) => {
 	}
 };
 
-const writeStore = (key, value) => {
-	try {
-		window.localStorage.setItem(key, JSON.stringify(value));
-	} catch (error) {
-		/* 저장 실패는 무시 (시크릿 모드 등) */
-	}
-};
-
 const getHost = (url) => {
 	try {
 		return new URL(url).hostname.replace(/^www\./, "");
@@ -101,80 +93,7 @@ const categoryIcon = {
 	참여: Users,
 };
 
-const programData = [
-	{
-		id: 1,
-		title: "몸의 언어",
-		enTitle: "Language of the Body",
-		date: "5.24 (일)",
-		day: "24",
-		time: "15:00",
-		place: "춘천 꿈어울림센터",
-		genre: "마임",
-		tags: ["마임", "실내"],
-		artist: "김민준 × 움직임연구소",
-		duration: "50분",
-		audience: "전체 관람가",
-		description:
-			"말 없이도 선명하게 전해지는 몸의 리듬과 표정을 만나는 오프닝 퍼포먼스.",
-		image: "https://images.unsplash.com/photo-1507676184212-d03ab07a01bf?auto=format&fit=crop&w=1200&q=85",
-		gradient: "from-orange-400 via-rose-500 to-fuchsia-700",
-	},
-	{
-		id: 2,
-		title: "경계의 놀이",
-		enTitle: "Play at the Edge",
-		date: "5.25 (월)",
-		day: "25",
-		time: "19:00",
-		place: "공지천 야외무대",
-		genre: "퍼포먼스",
-		tags: ["퍼포먼스", "야외"],
-		artist: "이서연 & 프론티어 앙상블",
-		duration: "60분",
-		audience: "전체 관람가",
-		description:
-			"일상과 비일상의 경계를 넘나들며 관객과 함께 완성하는 야외 퍼포먼스 공연.",
-		image: "https://images.unsplash.com/photo-1503095396549-807759245b35?auto=format&fit=crop&w=1200&q=85",
-		gradient: "from-blue-600 via-indigo-700 to-violet-900",
-	},
-	{
-		id: 3,
-		title: "침묵의 대화",
-		enTitle: "Silent Dialogue",
-		date: "5.26 (화)",
-		day: "26",
-		time: "17:00",
-		place: "중앙로 광장",
-		genre: "마임",
-		tags: ["마임", "거리극"],
-		artist: "박지훈 컴퍼니",
-		duration: "45분",
-		audience: "전체 관람가",
-		description:
-			"도시 한가운데에서 시작되는 짧고 깊은 눈맞춤, 침묵으로 나누는 대화.",
-		image: "https://images.unsplash.com/photo-1514525253161-7a46d19cd819?auto=format&fit=crop&w=1200&q=85",
-		gradient: "from-cyan-500 via-blue-600 to-indigo-800",
-	},
-	{
-		id: 4,
-		title: "거리의 상상",
-		enTitle: "Street of Imagination",
-		date: "5.25 (월)",
-		day: "25",
-		time: "17:00",
-		place: "춘천 명동 일대",
-		genre: "거리예술",
-		tags: ["거리예술", "퍼레이드"],
-		artist: "춘천시민예술단",
-		duration: "90분",
-		audience: "전체 관람가",
-		description:
-			"골목과 광장, 관객의 걸음이 무대가 되는 참여형 거리예술 퍼레이드.",
-		image: "https://images.unsplash.com/photo-1506157786151-b8491531f063?auto=format&fit=crop&w=1200&q=85",
-		gradient: "from-pink-500 via-red-500 to-orange-500",
-	},
-];
+// ── 프로그램 데이터: Supabase의 programs 테이블에서 조회 ──
 
 const dates = [
 	{ day: "24", label: "5.24", week: "일" },
@@ -185,6 +104,14 @@ const dates = [
 	{ day: "29", label: "5.29", week: "금" },
 	{ day: "30", label: "5.30", week: "토" },
 	{ day: "31", label: "5.31", week: "일" },
+];
+
+// 카드 장식용 그라디언트 (순수 프론트 스타일링 값이라 DB에는 저장하지 않고 인덱스로 순환 배정)
+const CARD_GRADIENTS = [
+	"from-orange-400 via-rose-500 to-fuchsia-700",
+	"from-blue-600 via-indigo-700 to-violet-900",
+	"from-cyan-500 via-blue-600 to-indigo-800",
+	"from-pink-500 via-red-500 to-orange-500",
 ];
 
 const IconButton = ({
@@ -240,12 +167,15 @@ const HomePage = () => {
 	const [dateFilter, setDateFilter] = useState("전체");
 	const [linkCategory, setLinkCategory] = useState("전체");
 
-	// 외부 홈페이지 링크 북마크(Supabase user_bookmarks) / 행사 일정 북마크(로컬)는 서로 분리해서 관리
+	// 외부 홈페이지 링크 북마크(Supabase user_bookmarks) / 행사 일정 북마크(Supabase user_schedules)는 서로 분리해서 관리
 	// linkBookmarks: [{ item_id, folder_id }]
 	const [linkBookmarks, setLinkBookmarks] = useState([]);
-	const [scheduleBookmarks, setScheduleBookmarks] = useState(() =>
-		readStore(STORAGE_KEYS.schedule, [2, 4]),
-	);
+	const [scheduleBookmarks, setScheduleBookmarks] = useState([]);
+
+	// 프로그램(행사 일정) 카탈로그는 Supabase에서 조회
+	const [programs, setPrograms] = useState([]);
+	const [programsLoading, setProgramsLoading] = useState(true);
+	const [programsError, setProgramsError] = useState(false);
 
 	// 사용자 북마크 폴더(Supabase folders)
 	const [folders, setFolders] = useState([]);
@@ -337,6 +267,101 @@ const HomePage = () => {
 		fetchFolders();
 	}, [isLoggedIn, user?.id]);
 
+	const fetchPrograms = () => {
+		setProgramsLoading(true);
+		setProgramsError(false);
+		supabase
+			.from("programs")
+			.select(
+				"id, title, en_title, date_label, day, start_time, place, genre, tags, artist, duration_label, audience, description, image_url",
+			)
+			.order("id", { ascending: true })
+			.then(({ data, error }) => {
+				if (error) {
+					setProgramsError(true);
+					setProgramsLoading(false);
+					return;
+				}
+				const normalized = (data ?? []).map((row, index) => ({
+					id: row.id,
+					title: row.title,
+					enTitle: row.en_title,
+					date: row.date_label,
+					day: row.day,
+					time: row.start_time,
+					place: row.place,
+					genre: row.genre,
+					tags: row.tags ?? [],
+					artist: row.artist,
+					duration: row.duration_label,
+					audience: row.audience,
+					description: row.description,
+					image: row.image_url,
+					gradient: CARD_GRADIENTS[index % CARD_GRADIENTS.length],
+				}));
+				setPrograms(normalized);
+				setProgramsLoading(false);
+			});
+	};
+
+	useEffect(() => {
+		fetchPrograms();
+	}, []);
+
+	// 로그인한 사용자의 user_schedules를 조회해 program_id 목록을 구성.
+	// DB에 아직 기록이 없고(신규) 예전 localStorage 일정 데이터가 남아있다면 1회 이관 후 정리.
+	// programs가 로드되기 전에는 legacy id 유효성을 검증할 수 없으므로 대기.
+	useEffect(() => {
+		if (!isLoggedIn || !user) {
+			setScheduleBookmarks([]);
+			return;
+		}
+		if (programsLoading) return;
+
+		let active = true;
+		(async () => {
+			const { data, error } = await supabase
+				.from("user_schedules")
+				.select("program_id");
+			if (!active || error) return;
+
+			if ((data ?? []).length > 0) {
+				setScheduleBookmarks(data.map((row) => row.program_id));
+				return;
+			}
+
+			// DB에 아직 없는 경우에만: 예전 로컬 일정 데이터 중 실제로 존재하는 program_id만 이관
+			const legacy = readStore(STORAGE_KEYS.schedule, []);
+			const validLegacyIds = legacy.filter((id) =>
+				programs.some((program) => program.id === id),
+			);
+
+			if (validLegacyIds.length > 0) {
+				const { error: insertError } = await supabase
+					.from("user_schedules")
+					.insert(
+						validLegacyIds.map((programId) => ({
+							user_id: user.id,
+							program_id: programId,
+						})),
+					);
+				if (!active) return;
+				if (!insertError) {
+					setScheduleBookmarks(validLegacyIds);
+					window.localStorage.removeItem(STORAGE_KEYS.schedule);
+					return;
+				}
+			}
+
+			window.localStorage.removeItem(STORAGE_KEYS.schedule);
+			setScheduleBookmarks([]);
+		})();
+
+		return () => {
+			active = false;
+		};
+	}, [isLoggedIn, user?.id, programsLoading, programs]);
+
 	useEffect(() => {
 		const handleScroll = () => setScrolled(window.scrollY > 50);
 		window.addEventListener("scroll", handleScroll);
@@ -349,12 +374,8 @@ const HomePage = () => {
 		return () => clearTimeout(timeout);
 	}, [toast]);
 
-	useEffect(() => {
-		writeStore(STORAGE_KEYS.schedule, scheduleBookmarks);
-	}, [scheduleBookmarks]);
-
 	const filteredPrograms = useMemo(() => {
-		return programData.filter((program) => {
+		return programs.filter((program) => {
 			const query = searchTerm.trim().toLowerCase();
 			const matchesSearch =
 				!query ||
@@ -370,13 +391,13 @@ const HomePage = () => {
 
 			return matchesSearch && matchesGenre && matchesDate;
 		});
-	}, [searchTerm, genreFilter, dateFilter]);
+	}, [programs, searchTerm, genreFilter, dateFilter]);
 
 	const timelinePrograms = useMemo(() => {
-		return programData
+		return programs
 			.filter((program) => program.day === selectedDay)
 			.sort((a, b) => a.time.localeCompare(b.time));
-	}, [selectedDay]);
+	}, [programs, selectedDay]);
 
 	const filteredLinks = useMemo(() => {
 		return linkCategory === "전체"
@@ -415,13 +436,13 @@ const HomePage = () => {
 	}, [bookmarkedLinks, activeFolderFilter]);
 
 	const scheduledPrograms = useMemo(() => {
-		return programData
+		return programs
 			.filter((program) => scheduleBookmarks.includes(program.id))
 			.sort(
 				(a, b) =>
 					a.day.localeCompare(b.day) || a.time.localeCompare(b.time),
 			);
-	}, [scheduleBookmarks]);
+	}, [programs, scheduleBookmarks]);
 
 	const toggleLinkBookmark = async (itemId) => {
 		if (!isLoggedIn || !user) {
@@ -594,15 +615,46 @@ const HomePage = () => {
 		setToast("북마크 폴더를 변경했습니다.");
 	};
 
-	const toggleSchedule = (id) => {
-		setScheduleBookmarks((current) => {
-			if (current.includes(id)) {
-				setToast("내 일정에서 뺐습니다.");
-				return current.filter((programId) => programId !== id);
+	const toggleSchedule = async (programId) => {
+		if (!isLoggedIn || !user) {
+			navigate("/login");
+			return;
+		}
+
+		const alreadyScheduled = scheduleBookmarks.includes(programId);
+
+		if (alreadyScheduled) {
+			setScheduleBookmarks((current) =>
+				current.filter((id) => id !== programId),
+			);
+			const { error } = await supabase
+				.from("user_schedules")
+				.delete()
+				.eq("user_id", user.id)
+				.eq("program_id", programId);
+
+			if (error) {
+				setScheduleBookmarks((current) => [...current, programId]);
+				setToast("일정 삭제에 실패했습니다.");
+				return;
+			}
+			setToast("내 일정에서 뺐습니다.");
+		} else {
+			setScheduleBookmarks((current) => [...current, programId]);
+			const { error } = await supabase.from("user_schedules").insert({
+				user_id: user.id,
+				program_id: programId,
+			});
+
+			if (error) {
+				setScheduleBookmarks((current) =>
+					current.filter((id) => id !== programId),
+				);
+				setToast("일정 저장에 실패했습니다.");
+				return;
 			}
 			setToast("내 일정에 저장했습니다!");
-			return [...current, id];
-		});
+		}
 	};
 
 	const scrollTo = (id, tab) => {
@@ -1176,39 +1228,67 @@ const HomePage = () => {
 							</p>
 						</div>
 
-						<div className="mt-5 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
-							{filteredPrograms.map((program) => (
-								<ProgramCard
-									key={program.id}
-									program={program}
-									scheduled={scheduleBookmarks.includes(
-										program.id,
-									)}
-									onSchedule={() =>
-										toggleSchedule(program.id)
-									}
-									onOpen={() => setSelectedProgram(program)}
-								/>
-							))}
-						</div>
-
-						{filteredPrograms.length === 0 && (
+						{programsLoading ? (
 							<div className="mt-6 rounded-3xl border border-dashed border-slate-300 bg-white py-16 text-center">
-								<Search className="mx-auto h-8 w-8 text-slate-300" />
-								<p className="mt-3 font-bold text-slate-600">
-									조건에 맞는 프로그램이 없습니다.
+								<Loader2 className="mx-auto h-8 w-8 animate-spin text-slate-300" />
+								<p className="mt-3 font-bold text-slate-500">
+									프로그램을 불러오는 중입니다...
+								</p>
+							</div>
+						) : programsError ? (
+							<div className="mt-6 rounded-3xl border border-dashed border-rose-300 bg-rose-50 py-16 text-center">
+								<AlertTriangle className="mx-auto h-8 w-8 text-rose-400" />
+								<p className="mt-3 font-bold text-rose-500">
+									프로그램을 불러오지 못했습니다. 잠시 후
+									다시 시도해주세요.
 								</p>
 								<button
-									onClick={() => {
-										setSearchTerm("");
-										setGenreFilter("전체");
-										setDateFilter("전체");
-									}}
-									className="mt-4 text-sm font-black text-mime-blue"
+									onClick={fetchPrograms}
+									className="mt-4 inline-flex items-center gap-1.5 text-sm font-black text-mime-blue"
 								>
-									전체 프로그램 보기
+									<RefreshCw className="h-4 w-4" />
+									다시 시도
 								</button>
 							</div>
+						) : (
+							<>
+								<div className="mt-5 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+									{filteredPrograms.map((program) => (
+										<ProgramCard
+											key={program.id}
+											program={program}
+											scheduled={scheduleBookmarks.includes(
+												program.id,
+											)}
+											onSchedule={() =>
+												toggleSchedule(program.id)
+											}
+											onOpen={() =>
+												setSelectedProgram(program)
+											}
+										/>
+									))}
+								</div>
+
+								{filteredPrograms.length === 0 && (
+									<div className="mt-6 rounded-3xl border border-dashed border-slate-300 bg-white py-16 text-center">
+										<Search className="mx-auto h-8 w-8 text-slate-300" />
+										<p className="mt-3 font-bold text-slate-600">
+											조건에 맞는 프로그램이 없습니다.
+										</p>
+										<button
+											onClick={() => {
+												setSearchTerm("");
+												setGenreFilter("전체");
+												setDateFilter("전체");
+											}}
+											className="mt-4 text-sm font-black text-mime-blue"
+										>
+											전체 프로그램 보기
+										</button>
+									</div>
+								)}
+							</>
 						)}
 					</div>
 				</section>
@@ -1252,7 +1332,7 @@ const HomePage = () => {
 										onClick={() =>
 											setShareProgram(
 												scheduledPrograms[0] ||
-													programData[1],
+													programs[1],
 											)
 										}
 										className="inline-flex items-center gap-2 rounded-full border border-white/20 px-5 py-3 text-sm font-bold text-white transition hover:bg-white/10"
@@ -1386,7 +1466,7 @@ const HomePage = () => {
 							<button
 								onClick={() =>
 									setShareProgram(
-										scheduledPrograms[0] || programData[1],
+										scheduledPrograms[0] || programs[1],
 									)
 								}
 								className="inline-flex items-center justify-center gap-2 rounded-full bg-mime-navy px-5 py-3 text-sm font-bold text-white transition hover:bg-mime-blue"
@@ -1553,6 +1633,20 @@ const HomePage = () => {
 							</div>
 						) : (
 							<>
+								{foldersError && (
+									<div className="mt-8 flex items-center gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-bold text-rose-500">
+										<AlertTriangle className="h-4 w-4 shrink-0" />
+										폴더를 불러오지 못했습니다.
+										<button
+											onClick={fetchFolders}
+											className="ml-auto inline-flex items-center gap-1 font-black hover:underline"
+										>
+											<RefreshCw className="h-3.5 w-3.5" />
+											다시 시도
+										</button>
+									</div>
+								)}
+
 								<div className="hide-scrollbar mt-8 flex gap-2 overflow-x-auto pb-1">
 									<button
 										onClick={() =>
@@ -1596,6 +1690,12 @@ const HomePage = () => {
 											{folder.name}
 										</button>
 									))}
+									{foldersLoading && folders.length === 0 && (
+										<span className="flex shrink-0 items-center gap-1.5 rounded-full bg-slate-100 px-4 py-2 text-sm font-bold text-slate-400">
+											<Loader2 className="h-3.5 w-3.5 animate-spin" />
+											불러오는 중
+										</span>
+									)}
 									<button
 										onClick={() =>
 											setFolderModal({
@@ -1637,18 +1737,27 @@ const HomePage = () => {
 										<div className="rounded-[2rem] border border-dashed border-slate-300 bg-white py-16 text-center">
 											<Star className="mx-auto h-9 w-9 text-slate-300" />
 											<p className="mt-3 font-bold text-slate-500">
-												아직 북마크한 링크가 없습니다.
+												{activeFolderFilter === "all"
+													? "아직 북마크한 링크가 없습니다."
+													: "이 폴더에는 북마크한 링크가 없습니다."}
 											</p>
 											<button
 												onClick={() =>
-													scrollTo(
-														"links",
-														"바로가기",
-													)
+													activeFolderFilter ===
+													"all"
+														? scrollTo(
+																"links",
+																"바로가기",
+															)
+														: setActiveFolderFilter(
+																"all",
+															)
 												}
 												className="mt-4 text-sm font-black text-mime-blue"
 											>
-												바로가기 링크 둘러보기
+												{activeFolderFilter === "all"
+													? "바로가기 링크 둘러보기"
+													: "전체 북마크 보기"}
 											</button>
 										</div>
 									)}

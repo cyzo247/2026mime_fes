@@ -1,3 +1,36 @@
+    @import "tailwindcss";
+
+    @theme {
+      --color-mime-navy: #07182F;
+      --color-mime-blue: #1769E0;
+      --color-mime-purple: #7C3AED;
+      --color-mime-lime: #D8FF38;
+      --color-mime-pink: #FF548B;
+      --color-mime-cream: #F7F5EF;
+
+      --shadow-glow: 0 0 60px rgba(78, 105, 255, 0.22);
+      --shadow-card: 0 20px 60px rgba(2, 12, 32, 0.18);
+
+      --animate-float: float 6s ease-in-out infinite;
+      --animate-pulseSoft: pulseSoft 3s ease-in-out infinite;
+      --animate-marquee: marquee 24s linear infinite;
+    }
+
+    @keyframes float {
+      0%, 100% { transform: translateY(0px) rotate(0deg); }
+      50% { transform: translateY(-18px) rotate(3deg); }
+    }
+
+    @keyframes pulseSoft {
+      0%, 100% { opacity: .45; transform: scale(1); }
+      50% { opacity: .85; transform: scale(1.08); }
+    }
+
+    @keyframes marquee {
+      0% { transform: translateX(0); }
+      100% { transform: translateX(-50%); }
+    }
+
     html {
       scroll-behavior: smooth;
     }
